@@ -127,8 +127,9 @@ with col2:
         ))
 
         # Настройка координатной сетки
-        fig.update_xaxes(range=, side="top", gridcolor='#eeeeee', zeroline=False)
-        fig.update_yaxes(range=, gridcolor='#eeeeee', zeroline=False)
+               # Настройка координатной сетки (теперь с правильными цифрами)
+        fig.update_xaxes(range=[0, 400], side="top", gridcolor='#eeeeee', zeroline=False)
+        fig.update_yaxes(range=[400, 0], gridcolor='#eeeeee', zeroline=False)
         fig.update_layout(width=500, height=500, margin=dict(l=0,r=0,t=0,b=0), template="plotly_white")
 
         st.plotly_chart(fig, use_container_width=True)
