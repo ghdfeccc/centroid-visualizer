@@ -26,7 +26,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 Центр масс: Аналитическая система")
+st.title("🎯Центр масс системы точек")
 
 # Инициализация сессии
 if 'all_points' not in st.session_state:
