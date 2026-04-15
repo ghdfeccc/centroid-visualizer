@@ -48,7 +48,6 @@ with col1:
     tab1, tab2 = st.tabs(["🖌 Рисовать", "🔢 Координаты"])
     
     with tab1:
-        st.info("📱 На телефоне: нажимайте четко и быстро (не тяните палец)")
         canvas_result = st_canvas(
             fill_color="rgba(255, 0, 0, 0.3)",
             stroke_width=2,
