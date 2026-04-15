@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 # 1. Настройка страницы
 st.set_page_config(page_title="Центр Масс | Инженерный калькулятор", layout="wide")
 
-# 2. Стильный CSS с инженерной сеткой
+# 2. Стильный CSS с инженерной сеткой и адаптивностью
 st.markdown("""
     <style>
     .stApp {
@@ -23,10 +23,12 @@ st.markdown("""
         border: 1px solid #c1c4f7;
     }
     h1 { color: #003399; background: white; padding: 15px; border-radius: 12px; border-left: 8px solid #ff0000; }
+    /* Фикс для мобильных: чтобы холст не прокручивался при рисовании */
+    canvas { touch-action: none; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🎯Центр масс системы точек")
+st.title("🎯 Центр масс: Аналитическая система")
 
 # Инициализация сессии
 if 'all_points' not in st.session_state:
@@ -39,22 +41,24 @@ with col1:
     tab1, tab2 = st.tabs(["🖌 Рисовать на холсте", "🔢 Точные координаты"])
     
     with tab1:
-        st.caption("Кликните на поле ниже (Масса по умолчанию: 1.0)")
+        st.caption("Тапните по полю (Масса по умолчанию: 1.0)")
         canvas_result = st_canvas(
             fill_color="rgba(255, 0, 0, 0.3)",
             stroke_width=2,
             background_color="#ffffff",
             height=400, width=400,
             drawing_mode="point",
+            update_streamlit=True,    # Важно для телефонов
+            point_display_radius=5,   # Чтобы точку было видно под пальцем
             key="canvas",
         )
         if canvas_result.json_data is not None:
             df_canvas = pd.json_normalize(canvas_result.json_data["objects"])
             if not df_canvas.empty:
                 for _, row in df_canvas.iterrows():
+                    # Проверка координат
                     if not ((st.session_state.all_points['x'] == row['left']) & 
                             (st.session_state.all_points['y'] == row['top'])).any():
-                        # МАССА ПО УМОЛЧАНИЮ 1.0
                         new_pt = pd.DataFrame({'x': [row['left']], 'y': [row['top']], 'weight': [1.0]})
                         st.session_state.all_points = pd.concat([st.session_state.all_points, new_pt], ignore_index=True)
     
@@ -63,25 +67,28 @@ with col1:
             c1, c2, c3 = st.columns(3)
             nx = c1.number_input("X (0-400)", 0, 400, 200)
             ny = c2.number_input("Y (0-400)", 0, 400, 200)
-            # МАССА ПО УМОЛЧАНИЮ 1.0
             nw = c3.number_input("Масса (W)", 0.1, 1000.0, 1.0)
             if st.form_submit_button("Добавить точку"):
                 new_row = pd.DataFrame({'x': [nx], 'y': [ny], 'weight': [nw]})
                 st.session_state.all_points = pd.concat([st.session_state.all_points, new_row], ignore_index=True)
 
-    st.markdown("**📋 Список точек (можно менять массу и удалять строки):**")
+    st.markdown("**📋 Список точек (редактирование и удаление):**")
     st.session_state.all_points = st.data_editor(
         st.session_state.all_points, 
         num_rows="dynamic", 
         use_container_width=True,
         key="main_editor"
     )
+    if st.button("🗑 Очистить всё"):
+        st.session_state.all_points = pd.DataFrame(columns=['x', 'y', 'weight'])
+        st.rerun()
 
 with col2:
     st.subheader("📈 Визуальный анализ")
     df = st.session_state.all_points
     
     if not df.empty:
+        # Приведение типов для исключения ошибок
         df['x'] = pd.to_numeric(df['x'])
         df['y'] = pd.to_numeric(df['y'])
         df['weight'] = pd.to_numeric(df['weight']).fillna(1.0)
@@ -92,12 +99,13 @@ with col2:
 
         fig = go.Figure()
 
+        # Паутина связей
         for _, row in df.iterrows():
             fig.add_trace(go.Scatter(x=[row['x'], cx], y=[row['y'], cy], 
                                      mode='lines', line=dict(color='#cccccc', width=1), 
                                      hoverinfo='skip', showlegend=False))
 
-        # ЯРКИЕ ТОЧКИ
+        # Яркие точки системы
         fig.add_trace(go.Scatter(
             x=df['x'], y=df['y'], mode='markers',
             marker=dict(color='#0055ff', size=df['weight'].astype(float)*2 + 10, 
@@ -105,7 +113,7 @@ with col2:
             name="Точки"
         ))
 
-        # ЯРКИЙ ЦЕНТР МАСС (ТОЧКА)
+        # Яркий круглый центр масс
         fig.add_trace(go.Scatter(
             x=[cx], y=[cy], mode='markers',
             marker=dict(color='#ff0000', size=18, symbol='circle', 
@@ -113,7 +121,7 @@ with col2:
             name="Центр масс"
         ))
 
-        # ИСПРАВЛЕННЫЕ ОСИ
+        # Настройка осей (важно: 0-400 и 400-0 для инверсии Y)
         fig.update_xaxes(range=[0, 400], side="top", gridcolor='#eeeeee', zeroline=False)
         fig.update_yaxes(range=[400, 0], gridcolor='#eeeeee', zeroline=False)
         fig.update_layout(width=500, height=500, margin=dict(l=0,r=0,t=0,b=0), template="plotly_white")
@@ -125,7 +133,7 @@ with col2:
         m2.metric("Центр Y", f"{cy:.1f}")
         m3.metric("Общая масса", f"{total_w:.1f}")
     else:
-        st.info("Добавьте точки, чтобы увидеть график.")
+        st.info("Добавьте точки на холсте или введите координаты вручную.")
 
 st.divider()
 st.latex(r"X_c = \frac{\sum x_i w_i}{\sum w_i}, \quad Y_c = \frac{\sum y_i w_i}{\sum w_i}")
