@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 # 1. Настройка страницы
 st.set_page_config(page_title="Центр Масс | Полная синхронизация", layout="wide")
 
-# 2. Стильный CSS
+# 2. Дизайн и стили
 st.markdown("""
     <style>
     .stApp {
@@ -29,16 +29,16 @@ st.markdown("""
 
 st.title("🎯 Центр масс: Аналитическая система")
 
-# --- Инициализация сессии (Память программы) ---
+# --- Инициализация памяти приложения ---
 if 'all_points' not in st.session_state:
     st.session_state.all_points = pd.DataFrame(columns=['x', 'y', 'weight'])
 if 'sync_key' not in st.session_state:
     st.session_state.sync_key = 0
 
-# Функция для ПОЛНОЙ очистки и холста, и таблицы
+# Функция полной очистки
 def clear_all():
     st.session_state.all_points = pd.DataFrame(columns=['x', 'y', 'weight'])
-    st.session_state.sync_key += 1 # Смена ключа заставляет все виджеты обнулиться
+    st.session_state.sync_key += 1
 
 col1, col2 = st.columns([1, 1.2], gap="large")
 
@@ -47,8 +47,19 @@ with col1:
     tab1, tab2 = st.tabs(["🖌 Рисовать на холсте", "🔢 Точные координаты"])
     
     with tab1:
-        st.caption("Кликайте по полю. Удаление в таблице ниже очистит и холст.")
+        # ПОДГОТОВКА ДАННЫХ ДЛЯ ХОЛСТА (чтобы точки не исчезали при удалении одной)
+        initial_drawing = {"objects": []}
+        for _, row in st.session_state.all_points.iterrows():
+            initial_drawing["objects"].append({
+                "type": "circle",
+                "left": row['x'] - 5, "top": row['y'] - 5, # Смещение для центровки круга
+                "radius": 5, "fill": "rgba(255, 0, 0, 0.3)",
+                "strokeWidth": 2, "stroke": "red",
+                "selectable": False
+            })
+
         canvas_result = st_canvas(
+            initial_drawing=initial_drawing if st.session_state.all_points.size > 0 else None,
             fill_color="rgba(255, 0, 0, 0.3)",
             stroke_width=2,
             background_color="#ffffff",
@@ -56,17 +67,16 @@ with col1:
             drawing_mode="point",
             update_streamlit=True,
             point_display_radius=6,
-            # Динамический ключ: если он меняется, холст стирается
-            key=f"canvas_key_{st.session_state.sync_key}", 
+            key=f"canvas_k_{st.session_state.sync_key}", 
         )
         
-        # Обработка новых точек с холста
+        # Если добавили новую точку на холсте
         if canvas_result.json_data is not None:
             df_canvas = pd.json_normalize(canvas_result.json_data["objects"])
             if not df_canvas.empty:
                 for _, row in df_canvas.iterrows():
-                    # Округляем координаты для стабильности
                     rx, ry = round(row['left'], 1), round(row['top'], 1)
+                    # Добавляем, только если такой точки еще нет в таблице
                     if not ((st.session_state.all_points['x'] == rx) & 
                             (st.session_state.all_points['y'] == ry)).any():
                         new_pt = pd.DataFrame({'x': [rx], 'y': [ry], 'weight': [1.0]})
@@ -77,26 +87,24 @@ with col1:
             c1, c2, c3 = st.columns(3)
             nx = c1.number_input("X (0-400)", 0, 400, 200)
             ny = c2.number_input("Y (0-400)", 0, 400, 200)
-            nw = c3.number_input("Масса (W)", 0.1, 1000.0, 1.0)
-            if st.form_submit_button("Добавить точку"):
+            nw = c3.number_input("Масса", 0.1, 1000.0, 1.0)
+            if st.form_submit_button("Добавить"):
                 new_row = pd.DataFrame({'x': [nx], 'y': [ny], 'weight': [nw]})
                 st.session_state.all_points = pd.concat([st.session_state.all_points, new_row], ignore_index=True)
 
-    st.markdown("**📋 Список точек (редактирование и удаление):**")
-    
+    st.markdown("**📋 Список точек:**")
     # Редактор таблицы
     edited_df = st.data_editor(
         st.session_state.all_points, 
         num_rows="dynamic", 
         use_container_width=True,
-        key=f"editor_key_{st.session_state.sync_key}"
+        key=f"editor_k_{st.session_state.sync_key}"
     )
 
-    # ЛОГИКА УДАЛЕНИЯ: Если пользователь удалил строку в таблице,
-    # мы должны принудительно обновить холст
+    # СИНХРОНИЗАЦИЯ УДАЛЕНИЯ
     if len(edited_df) < len(st.session_state.all_points):
         st.session_state.all_points = edited_df
-        st.session_state.sync_key += 1 # Обнуляем холст, чтобы стертая точка исчезла
+        st.session_state.sync_key += 1 # Перерисовываем холст без удаленной точки
         st.rerun()
     else:
         st.session_state.all_points = edited_df
@@ -106,40 +114,28 @@ with col1:
 with col2:
     st.subheader("📈 Визуальный анализ")
     df = st.session_state.all_points
-    
     cx, cy, total_w = 0.0, 0.0, 0.0
 
     if not df.empty:
         df['x'] = pd.to_numeric(df['x'])
         df['y'] = pd.to_numeric(df['y'])
         df['weight'] = pd.to_numeric(df['weight']).fillna(1.0)
-
         total_w = df['weight'].sum()
         if total_w != 0:
-            cx = (df['x'] * df['weight']).sum() / total_w
-            cy = (df['y'] * df['weight']).sum() / total_w
+            cx, cy = (df['x'] * df['weight']).sum() / total_w, (df['y'] * df['weight']).sum() / total_w
 
         fig = go.Figure()
-        # Линии связи
         for _, row in df.iterrows():
-            fig.add_trace(go.Scatter(x=[row['x'], cx], y=[row['y'], cy], 
-                                     mode='lines', line=dict(color='#cccccc', width=1), 
-                                     hoverinfo='skip', showlegend=False))
-        # Точки
-        fig.add_trace(go.Scatter(x=df['x'], y=df['y'], mode='markers',
-            marker=dict(color='#0055ff', size=df['weight'].astype(float)*2 + 10, 
-                        opacity=1.0, line=dict(width=2, color='white')), name="Точки"))
-        # Центр масс
-        fig.add_trace(go.Scatter(x=[cx], y=[cy], mode='markers',
-            marker=dict(color='#ff0000', size=18, symbol='circle', 
-                        line=dict(width=3, color='white')), name="Центр масс"))
-
+            fig.add_trace(go.Scatter(x=[row['x'], cx], y=[row['y'], cy], mode='lines', line=dict(color='#cccccc', width=1), showlegend=False))
+        fig.add_trace(go.Scatter(x=df['x'], y=df['y'], mode='markers', marker=dict(color='#0055ff', size=df['weight'].astype(float)*2 + 10, opacity=1.0, line=dict(width=2, color='white')), name="Точки"))
+        fig.add_trace(go.Scatter(x=[cx], y=[cy], mode='markers', marker=dict(color='#ff0000', size=18, symbol='circle', line=dict(width=3, color='white')), name="Центр масс"))
+        
         fig.update_xaxes(range=[0, 400], side="top", gridcolor='#eeeeee', zeroline=False)
         fig.update_yaxes(range=[400, 0], gridcolor='#eeeeee', zeroline=False)
         fig.update_layout(width=500, height=500, margin=dict(l=0,r=0,t=0,b=0), template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("Добавьте точки на холсте или через координаты.")
+        st.info("Добавьте точки.")
 
     st.markdown("---")
     m1, m2, m3 = st.columns(3)
