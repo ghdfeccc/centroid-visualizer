@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="Центр Масс | Инженерный калькулятор", layout="wide")
 
-# 2. Стильный CSS с инженерной сеткой
 st.markdown("""
     <style>
     .stApp {
@@ -25,9 +24,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🚀 Центр масс: Аналитическая система")
+st.title("🎯 Центр масс: Аналитическая система")
 
-# Инициализация сессии
 if 'all_points' not in st.session_state:
     st.session_state.all_points = pd.DataFrame(columns=['x', 'y', 'weight'])
 
@@ -53,7 +51,6 @@ with col1:
                 for _, row in df_canvas.iterrows():
                     if not ((st.session_state.all_points['x'] == row['left']) & 
                             (st.session_state.all_points['y'] == row['top'])).any():
-                        # МАССА ПО УМОЛЧАНИЮ 1.0
                         new_pt = pd.DataFrame({'x': [row['left']], 'y': [row['top']], 'weight': [1.0]})
                         st.session_state.all_points = pd.concat([st.session_state.all_points, new_pt], ignore_index=True)
     
@@ -68,7 +65,7 @@ with col1:
                 new_row = pd.DataFrame({'x': [nx], 'y': [ny], 'weight': [nw]})
                 st.session_state.all_points = pd.concat([st.session_state.all_points, new_row], ignore_index=True)
 
-    st.markdown("**📋 Список точек (можно менять массу и удалять строки):**")
+    st.markdown("**📋 Список точек:**")
     st.session_state.all_points = st.data_editor(
         st.session_state.all_points, 
         num_rows="dynamic", 
@@ -96,7 +93,6 @@ with col2:
                                      mode='lines', line=dict(color='#cccccc', width=1), 
                                      hoverinfo='skip', showlegend=False))
 
-        # ЯРКИЕ ТОЧКИ
         fig.add_trace(go.Scatter(
             x=df['x'], y=df['y'], mode='markers',
             marker=dict(color='#0055ff', size=df['weight'].astype(float)*2 + 10, 
@@ -104,7 +100,6 @@ with col2:
             name="Точки"
         ))
 
-        # ЯРКИЙ ЦЕНТР МАСС (ТОЧКА)
         fig.add_trace(go.Scatter(
             x=[cx], y=[cy], mode='markers',
             marker=dict(color='#ff0000', size=18, symbol='circle', 
@@ -112,7 +107,6 @@ with col2:
             name="Центр масс"
         ))
 
-        # ИСПРАВЛЕННЫЕ ОСИ
         fig.update_xaxes(range=[0, 400], side="top", gridcolor='#eeeeee', zeroline=False)
         fig.update_yaxes(range=[400, 0], gridcolor='#eeeeee', zeroline=False)
         fig.update_layout(width=500, height=500, margin=dict(l=0,r=0,t=0,b=0), template="plotly_white")
