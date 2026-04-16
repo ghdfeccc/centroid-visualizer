@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 # 1. Настройка страницы
-st.set_page_config(page_title="Центр Масс | Аналитическая система", layout="wide")
+st.set_page_config(page_title="Центр Масс | Полная синхронизация", layout="wide")
 
 # 2. Стильный CSS
 st.markdown("""
@@ -29,17 +29,16 @@ st.markdown("""
 
 st.title("🎯 Центр масс: Аналитическая система")
 
-# Инициализация сессии
+# --- Инициализация сессии (Память программы) ---
 if 'all_points' not in st.session_state:
     st.session_state.all_points = pd.DataFrame(columns=['x', 'y', 'weight'])
-if 'editor_key' not in st.session_state:
-    st.session_state.editor_key = 0
+if 'sync_key' not in st.session_state:
+    st.session_state.sync_key = 0
 
-# Функция для ПОЛНОЙ очистки
+# Функция для ПОЛНОЙ очистки и холста, и таблицы
 def clear_all():
     st.session_state.all_points = pd.DataFrame(columns=['x', 'y', 'weight'])
-    st.session_state.editor_key += 1 # Меняем ключ, чтобы редактор "забыл" старые данные
-    # Очистка кэша холста происходит через смену ключа или обновление страницы
+    st.session_state.sync_key += 1 # Смена ключа заставляет все виджеты обнулиться
 
 col1, col2 = st.columns([1, 1.2], gap="large")
 
@@ -48,7 +47,7 @@ with col1:
     tab1, tab2 = st.tabs(["🖌 Рисовать на холсте", "🔢 Точные координаты"])
     
     with tab1:
-        st.caption("Кликните по полю (Масса по умолчанию: 1.0)")
+        st.caption("Кликайте по полю. Удаление в таблице ниже очистит и холст.")
         canvas_result = st_canvas(
             fill_color="rgba(255, 0, 0, 0.3)",
             stroke_width=2,
@@ -57,17 +56,22 @@ with col1:
             drawing_mode="point",
             update_streamlit=True,
             point_display_radius=6,
-            key=f"canvas_{st.session_state.editor_key}", # Динамический ключ
+            # Динамический ключ: если он меняется, холст стирается
+            key=f"canvas_key_{st.session_state.sync_key}", 
         )
+        
+        # Обработка новых точек с холста
         if canvas_result.json_data is not None:
             df_canvas = pd.json_normalize(canvas_result.json_data["objects"])
             if not df_canvas.empty:
                 for _, row in df_canvas.iterrows():
-                    if not ((st.session_state.all_points['x'] == row['left']) & 
-                            (st.session_state.all_points['y'] == row['top'])).any():
-                        new_pt = pd.DataFrame({'x': [row['left']], 'y': [row['top']], 'weight': [1.0]})
+                    # Округляем координаты для стабильности
+                    rx, ry = round(row['left'], 1), round(row['top'], 1)
+                    if not ((st.session_state.all_points['x'] == rx) & 
+                            (st.session_state.all_points['y'] == ry)).any():
+                        new_pt = pd.DataFrame({'x': [rx], 'y': [ry], 'weight': [1.0]})
                         st.session_state.all_points = pd.concat([st.session_state.all_points, new_pt], ignore_index=True)
-    
+
     with tab2:
         with st.form("coord_form", clear_on_submit=True):
             c1, c2, c3 = st.columns(3)
@@ -78,16 +82,25 @@ with col1:
                 new_row = pd.DataFrame({'x': [nx], 'y': [ny], 'weight': [nw]})
                 st.session_state.all_points = pd.concat([st.session_state.all_points, new_row], ignore_index=True)
 
-    st.markdown("**📋 Список точек:**")
-    # Используем динамический ключ для мгновенного обнуления редактора
-    st.session_state.all_points = st.data_editor(
+    st.markdown("**📋 Список точек (редактирование и удаление):**")
+    
+    # Редактор таблицы
+    edited_df = st.data_editor(
         st.session_state.all_points, 
         num_rows="dynamic", 
         use_container_width=True,
-        key=f"editor_{st.session_state.editor_key}"
+        key=f"editor_key_{st.session_state.sync_key}"
     )
-    
-    # Кнопка очистки вызывает функцию
+
+    # ЛОГИКА УДАЛЕНИЯ: Если пользователь удалил строку в таблице,
+    # мы должны принудительно обновить холст
+    if len(edited_df) < len(st.session_state.all_points):
+        st.session_state.all_points = edited_df
+        st.session_state.sync_key += 1 # Обнуляем холст, чтобы стертая точка исчезла
+        st.rerun()
+    else:
+        st.session_state.all_points = edited_df
+
     st.button("🗑 Очистить всё", on_click=clear_all)
 
 with col2:
@@ -107,13 +120,16 @@ with col2:
             cy = (df['y'] * df['weight']).sum() / total_w
 
         fig = go.Figure()
+        # Линии связи
         for _, row in df.iterrows():
             fig.add_trace(go.Scatter(x=[row['x'], cx], y=[row['y'], cy], 
                                      mode='lines', line=dict(color='#cccccc', width=1), 
                                      hoverinfo='skip', showlegend=False))
+        # Точки
         fig.add_trace(go.Scatter(x=df['x'], y=df['y'], mode='markers',
             marker=dict(color='#0055ff', size=df['weight'].astype(float)*2 + 10, 
                         opacity=1.0, line=dict(width=2, color='white')), name="Точки"))
+        # Центр масс
         fig.add_trace(go.Scatter(x=[cx], y=[cy], mode='markers',
             marker=dict(color='#ff0000', size=18, symbol='circle', 
                         line=dict(width=3, color='white')), name="Центр масс"))
@@ -123,7 +139,7 @@ with col2:
         fig.update_layout(width=500, height=500, margin=dict(l=0,r=0,t=0,b=0), template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("Добавьте точки на холсте или введите координаты вручную.")
+        st.info("Добавьте точки на холсте или через координаты.")
 
     st.markdown("---")
     m1, m2, m3 = st.columns(3)
