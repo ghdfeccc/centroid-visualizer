@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 # 1. Настройка страницы
 st.set_page_config(page_title="Центр Масс | Аналитическая система", layout="wide")
 
-# 2. Стильный CSS: фон-сетка и оформление блоков
+# 2. Стильный CSS
 st.markdown("""
     <style>
     .stApp {
@@ -29,9 +29,17 @@ st.markdown("""
 
 st.title("🎯 Центр масс: Аналитическая система")
 
-# Инициализация сессии (память приложения)
+# Инициализация сессии
 if 'all_points' not in st.session_state:
     st.session_state.all_points = pd.DataFrame(columns=['x', 'y', 'weight'])
+if 'editor_key' not in st.session_state:
+    st.session_state.editor_key = 0
+
+# Функция для ПОЛНОЙ очистки
+def clear_all():
+    st.session_state.all_points = pd.DataFrame(columns=['x', 'y', 'weight'])
+    st.session_state.editor_key += 1 # Меняем ключ, чтобы редактор "забыл" старые данные
+    # Очистка кэша холста происходит через смену ключа или обновление страницы
 
 col1, col2 = st.columns([1, 1.2], gap="large")
 
@@ -49,7 +57,7 @@ with col1:
             drawing_mode="point",
             update_streamlit=True,
             point_display_radius=6,
-            key="canvas_final",
+            key=f"canvas_{st.session_state.editor_key}", # Динамический ключ
         )
         if canvas_result.json_data is not None:
             df_canvas = pd.json_normalize(canvas_result.json_data["objects"])
@@ -71,26 +79,24 @@ with col1:
                 st.session_state.all_points = pd.concat([st.session_state.all_points, new_row], ignore_index=True)
 
     st.markdown("**📋 Список точек:**")
+    # Используем динамический ключ для мгновенного обнуления редактора
     st.session_state.all_points = st.data_editor(
         st.session_state.all_points, 
         num_rows="dynamic", 
         use_container_width=True,
-        key="main_editor"
+        key=f"editor_{st.session_state.editor_key}"
     )
     
-    if st.button("🗑 Очистить всё"):
-        st.session_state.all_points = pd.DataFrame(columns=['x', 'y', 'weight'])
-        st.rerun()
+    # Кнопка очистки вызывает функцию
+    st.button("🗑 Очистить всё", on_click=clear_all)
 
 with col2:
     st.subheader("📈 Визуальный анализ")
     df = st.session_state.all_points
     
-    # Значения по умолчанию (сбрасываются при пустой таблице)
     cx, cy, total_w = 0.0, 0.0, 0.0
 
     if not df.empty:
-        # Приведение типов для расчетов
         df['x'] = pd.to_numeric(df['x'])
         df['y'] = pd.to_numeric(df['y'])
         df['weight'] = pd.to_numeric(df['weight']).fillna(1.0)
@@ -101,39 +107,24 @@ with col2:
             cy = (df['y'] * df['weight']).sum() / total_w
 
         fig = go.Figure()
-
-        # Паутина связей
         for _, row in df.iterrows():
             fig.add_trace(go.Scatter(x=[row['x'], cx], y=[row['y'], cy], 
                                      mode='lines', line=dict(color='#cccccc', width=1), 
                                      hoverinfo='skip', showlegend=False))
-
-        # Яркие синие точки
-        fig.add_trace(go.Scatter(
-            x=df['x'], y=df['y'], mode='markers',
+        fig.add_trace(go.Scatter(x=df['x'], y=df['y'], mode='markers',
             marker=dict(color='#0055ff', size=df['weight'].astype(float)*2 + 10, 
-                        opacity=1.0, line=dict(width=2, color='white')),
-            name="Точки"
-        ))
-
-        # Центр масс (Красная точка)
-        fig.add_trace(go.Scatter(
-            x=[cx], y=[cy], mode='markers',
+                        opacity=1.0, line=dict(width=2, color='white')), name="Точки"))
+        fig.add_trace(go.Scatter(x=[cx], y=[cy], mode='markers',
             marker=dict(color='#ff0000', size=18, symbol='circle', 
-                        line=dict(width=3, color='white')),
-            name="Центр масс"
-        ))
+                        line=dict(width=3, color='white')), name="Центр масс"))
 
-        # Настройка осей (инверсия Y под холст)
         fig.update_xaxes(range=[0, 400], side="top", gridcolor='#eeeeee', zeroline=False)
         fig.update_yaxes(range=[400, 0], gridcolor='#eeeeee', zeroline=False)
         fig.update_layout(width=500, height=500, margin=dict(l=0,r=0,t=0,b=0), template="plotly_white")
-
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Добавьте точки на холсте или введите координаты вручную.")
 
-    # Метрики ВСЕГДА обновляются (показывают 0.0 при пустой таблице)
     st.markdown("---")
     m1, m2, m3 = st.columns(3)
     m1.metric("Центр X", f"{cx:.1f}")
